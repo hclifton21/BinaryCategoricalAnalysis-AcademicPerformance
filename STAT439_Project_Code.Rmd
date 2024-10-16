@@ -1,0 +1,419 @@
+---
+title: "Depression's Influence on Academic Performance"
+author: "Harley Clifton, Sara Bancale, & Matt McMahon"
+date: "April 4, 2022"
+output:
+  pdf_document: default
+  word_document: default
+subtitle: STAT 439 - Data Project Draft Report
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Library relevant packages
+library(yarrr)
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+library(knitr)
+library(gtsummary)
+library(multcomp)
+library(effects)
+library(ROCR)
+library(ResourceSelection)  # For hoslem.test function
+theme_set(theme_bw()) 
+```
+
+
+
+# Project Scaffolding
+
+```{r}
+Acad <- read_csv("data/AcademicPerformance.csv")
+
+Acad <- Acad %>% rename(Age='Age:',
+            Pleasure=`Little interest or pleasure in doing things`,
+            Depressed=`Feeling down, depressed, or hopeless`,
+            Sleep=`Trouble falling or staying asleep, or sleeping too much`,
+            Tired=`Feeling tired or having little energy`,
+            Appetite=`Poor appetite or overeating`,
+            Feeling=`Feeling bad about yourself or that you are a failure or not have let yourself or your family down`,
+            Concentrating=`Trouble concentrating on things, such as reading the newspaper or watching television`,
+            Slow=`Moving or speaking so slowly that other people could have noticed Or being so restless that you have been moving around a lot more than usual`,
+            Thoughts=`Thoughts that you would be better off dead or of hurting yourself in some way`,
+            Job=`Do you have part-time or full-time job?`,
+            LivingSituation=`Which of the following best describes your term-time accommodation?`,
+            Study=`How many hours do you spend studying each day?`,
+            Electronics=`How many of the electronic gadgets (e.g. mobile phone, computer, laptop, PSP, PS4, Wii, etc.) do you have in your home or your student accommodation/mess/hall?`,
+            SocialMedia=`How many hours do you spend on social media per day?`,
+            GPA=`Your Last Semester GPA:`,
+            Sex=`Gender:`,
+            EduLevel='Educational Level')
+```
+
+
+
+$~$
+$~$
+$~$
+
+# Data Wrangling
+
+```{r}
+# Data Wrangling
+
+Acad <- Acad %>%
+  mutate(Standing = case_when(GPA < 2 ~"Probation",
+                   GPA >= 2 ~"Good Standing"))
+
+Acad$DepressionScore = Acad$Depressed + Acad$Sleep + Acad$Tired + Acad$Appetite + 
+  Acad$Feeling + Acad$Concentrating + Acad$Slow + Acad$Thoughts + Acad$Pleasure - 9
+
+Acad <- Acad %>% 
+  mutate(DepressionLevel= case_when(
+    DepressionScore <= 4 ~ "Normal",
+    DepressionScore >= 5 & DepressionScore <= 9 ~ "Mild",
+    DepressionScore >= 10 & DepressionScore <= 14 ~ "Moderate",
+    DepressionScore >= 15 & DepressionScore <= 19 ~ "Moderately Severe",
+    DepressionScore >= 20 ~ "Severe"))
+
+Acad <- Acad %>% 
+  mutate(EduLevel = case_when(EduLevel == "High School" ~ "HighSchool",
+                              EduLevel == "College - Bachelor's" ~ "Bachelors",
+                              EduLevel == "Master" ~ "Masters"))
+
+Acad <- Acad %>% 
+  mutate(Study = case_when(Study == "1 - 2 hours" ~ "1to2hrs",
+                          Study == "2 - 4 hours" ~ "2to4hrs",
+                          Study == "More than 4 hours" ~ "4above"))
+
+Acad <- Acad %>% 
+  mutate(SocialMedia = case_when(SocialMedia == "1 - 2 Hours" ~ "1to2hrs",
+                          SocialMedia == "2 - 4 Hours" ~ "2to4hrs",
+                          SocialMedia == "More than 4 Hours" ~ "4above"))
+
+Acad <- Acad %>% 
+  mutate(Age = case_when(Age == "18 years or less" ~ "18less",
+                         Age == "19 to 24 years" ~ "19to24",
+                         Age == "25 years and above" ~ "25above"))
+
+Acad <- Acad %>% 
+  mutate(Job = case_when(Job == "No" ~ "None",
+                         Job == "Part time" ~ "PartTime",
+                         Job == "Part Time" ~ "PartTime",
+                         Job == "part Time" ~ "PartTime",
+                         Job == "part time" ~ "PartTime",
+                         Job == "Full time" ~ "FullTime",
+                         Job == "Full Time" ~ "FullTime",
+                         Job == "full Time" ~ "FullTime",
+                         Job == "Full Time" ~ "FullTime"))
+
+Acad <- Acad %>% 
+  mutate(LivingSituation = case_when(LivingSituation == "Home (with parents)" ~ "wParents",
+                         LivingSituation == "University hall of residence" ~ "Dorm",
+                         LivingSituation == "Private rented accommodation" ~ "offCampus"))
+
+# Create a new binary Standing variable with 'Probation' as a success
+Acad.new <- Acad %>% mutate(Stand.Bin = case_when(GPA < 2 ~"1",
+                                                  GPA >= 2 ~"0"))
+Acad.new$Stand.Bin <- as.numeric(Acad.new$Stand.Bin)
+
+Acad.new <- na.omit(Acad.new)
+dim(Acad.new)
+```
+
+
+
+$~$
+$~$
+$~$
+
+# Data Visualization
+
+```{r}
+# Creating a Scatterplot Matrix and Correlation Matrix
+
+Acad.sub <- data.frame(Acad$DepressionScore, Acad$GPA, Acad$Standing, Acad$Sex, 
+                       Acad$Study, Acad$EduLevel, Acad$Job, Acad$SocialMedia, Acad$Age)
+
+library(psych)
+
+suppressWarnings(pairs.panels(Acad.sub, 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plot
+             ellipses = FALSE # do not show correlation ellipses
+             ))
+```
+
+```{r}
+# Univariate Distributions
+
+Acad.new %>% ggplot(aes(x = Standing)) + 
+  geom_bar() +
+  ggtitle("Bar Plot of Academic Standing")
+```
+
+```{r}
+table(Acad.new$Standing)
+```
+
+Initially, we want to acknowledge that there are much fewer subjects who are on Academic Probation which may be attributed to the time sensitivity of the Academic Dismissal Decision Process.
+
+
+
+
+```{r}
+hist(Acad.new$DepressionScore, main = "Histogram of Depression Score Index", 
+     xlab = "Depression Score Index")
+```
+```{r}
+plot(Stand.Bin ~ DepressionScore, xlab = "Overall Depression Index", 
+     ylab = "Academic Standing", 
+     main = "Scatterplot of Depression Index and Academic Standing", 
+     pch = 16, data = Acad.new)
+```
+
+
+```{r}
+boxplot(DepressionScore ~ Stand.Bin, data = Acad.new, 
+        xlab = "Academic Standing (0 = Good Standing, 1 = Academic Probation)", 
+        main = "Boxplot to Compare Depression Index with Academic Standing")
+```
+
+
+```{r}
+# Enhanced Violin Plots
+
+library(yarrr)
+
+pirateplot(DepressionScore ~ Standing, data = Acad.new, inf.method = "ci", 
+           inf.disp = "line", bean.f.col = c("darkseagreen3", "powderblue"),
+           main = "Enhanced Violin Plot of Academic Standing and Depression Index", 
+           xlab = "Academic Standing", ylab = "Depression Score (PHQ-9 Result)")
+```
+
+$~$
+$~$
+$~$
+
+# Data Exploration
+
+```{r}
+library(mosaic)
+favstats(DepressionScore ~ Standing, data = Acad.new)
+```
+
+```{r}
+Acad.new$EduLevel <- factor(Acad.new$EduLevel, c("HighSchool","Bachelors","Masters"))
+```
+
+
+```{r}
+tally(~ Standing + Sex, data = Acad.new)
+tally(~ Standing + Age, data = Acad.new)
+tally(~ Standing + DepressionLevel, data = Acad.new)
+tally(~ Standing + EduLevel, data = Acad.new)
+tally(~ EduLevel + Age, data = Acad.new)
+tally(~ EduLevel + Sex, data = Acad.new)
+tally(~ Sex + Age, data = Acad.new)
+```
+
+
+## Extra Data Wrangling
+
+```{r}
+Acad.final <- Acad.new[!(Acad.new$Age == "18less"),]
+Acad.final <- Acad.final[!(Acad.final$EduLevel == "Mast"),]
+head(Acad.final)
+```
+
+
+```{r}
+Acad.final$Job <- factor(Acad.final$Job, c("None","PartTime","FullTime"))
+```
+
+
+$~$
+$~$
+$~$
+
+# Modeling our Data
+
+```{r}
+# Logistic Regression with All Interesting Predictors - FULL ADDITIVE
+
+LR.Add.mod <- glm(Stand.Bin ~ DepressionScore + Age + EduLevel + Job + 
+                    LivingSituation + Study, 
+                  family = binomial(link = "logit"), data = Acad.final)
+summary(LR.Add.mod)
+```
+
+
+Large p-values indicate we have too many predictors in our model. It is possible that some of our predictors share information, so we want to continue with some model selection analysis.
+
+
+
+
+### Model Selection
+
+```{r}
+mod.null <- glm(Stand.Bin ~ 1, family = binomial(link = "logit"), data = Acad.final)
+
+step(mod.null, Stand.Bin ~ (DepressionScore + Age + EduLevel + Job + 
+                    LivingSituation + Study)^2, direction = "forward")
+```
+                    
+```{r}
+# dredge to assess equivalent models
+mod.new <- glm(Stand.Bin ~ (DepressionScore + Age + EduLevel + Job + 
+                    LivingSituation + Study)^2, 
+               family = binomial(link = "logit"), data = Acad.final)
+summary(mod.new)
+
+
+mod.new2 <- glm(Stand.Bin ~ DepressionScore * Age + DepressionScore * Job + 
+                    Age * Job + EduLevel * LivingSituation + EduLevel * Study + 
+                  Job * Study + DepressionScore + Age + EduLevel + Job + 
+                    LivingSituation + Study, 
+               family = binomial(link = "logit"), data = Acad.final)
+
+library(MuMIn)
+options(na.action = "na.fail")
+suppressWarnings(dredgeoutput <- dredge(mod.new2, rank = "AIC", extra = "R^2", 
+                                        fixed = "DepressionScore"))
+head(dredgeoutput)
+```
+
+
+```{r}
+# Effects Plots
+
+## Fitting Interaction Models
+int.mod1 <- glm(Stand.Bin ~ Job * DepressionScore, family = binomial, 
+               data = Acad.final)
+
+plot(allEffects(int.mod1, resid = T), grid = T, type = "response")
+
+plot(allEffects(int.mod1), grid = T, multiline=T, ci.style="bands", lty=c(1:3), 
+     type = "response")
+```
+
+
+### Final Model
+
+```{r}
+# Need to include DepressionScore variable in Final Model because 
+# it pertains to our primary research question
+
+mod.final <- glm(Stand.Bin ~ DepressionScore * Job, 
+                 family = binomial, data = Acad.final)
+summary(mod.final)
+```
+
+Final Fitted Model:
+
+$log(\frac{\hat{\pi}}{1-\hat{\pi}})$ = $-3.30492 + 0.06797x_{D} + 2.53250 \ast I_{Job = Part Time} - 0.60706 \ast I_{Job = Full Time} - 0.23327 (x_{D} \ast I_{Job = Part Time}) + 0.04044 (x_{D} \ast I_{Job = Full Time})$
+
+where
+* $\hat{\pi}$ is the probability that an individual in our sample will be placed on academic probation
+* $x_{D}$ is the cumulative result of the PHQ questionnaire which is recorded as an individual's Depression Index Score in points
+* $I_{Job = Part Time}$ is an indicator variable that is 1 when the individual is working a part time job and 0 otherwise
+* $I_{Job = Full Time}$ is an indicator variable that is 1 when the individual is working a full time job and 0 otherwise
+
+
+```{r}
+# Exponentiate the Coefficients to Interpret
+
+exp(mod.final$coefficients)
+```
+
+
+
+
+```{r}
+# 95% Confidence Interval for these Coefficients
+
+confint(mod.final)
+
+exp(confint(mod.final))
+```
+
+
+
+### Model Diagnostics Array 
+```{r}
+# Standard Model Diagnostics Array
+
+par(mfrow=c(2,2))
+plot(mod.final, pch=16)
+```
+
+Cook's Distance is a measure of how much the model changes if you took the point
+
+all diagnostic plots in appendix
+
+```{r}
+plot(mod.final, 5, pch=16)
+```
+
+
+### Assessing Model Fit
+
+```{r}
+# Goodness of Fit for binary data: Hosmer-Lemeshow Test
+
+obs <- Acad.final$Stand.Bin
+expected <- fitted(mod.final)
+hoslem.test(obs, expected, g = 10) # g = # of groups
+```
+
+
+
+
+$~$
+$~$
+$~$
+
+# Prediction Ability
+
+```{r}
+# Generating an ROC Curve
+
+probs <- fitted(mod.final)
+pred.obj <- prediction(probs, Acad.final$Stand.Bin)
+
+plot(performance(pred.obj, "tpr", "fpr"), 
+     main = "Receiver Operation Characteristic Curve (ROC Curve)")
+```
+
+```{r}
+# Area under the ROC Curve
+
+area <- performance(pred.obj, "auc")
+auc <- as.numeric(area@y.values)
+auc
+```
+
+
+
+$~$
+$~$
+$~$
+
+# Citations
+
+```{r}
+citation("yarrr")
+citation("ggplot2")
+citation("multcomp")
+citation("effects")
+citation("gtsummary")
+citation("psych")
+citation("ROCR")
+citation("mosaic")
+citation("ResourceSelection")  # For hoslem.test function
+citation("MuMIn")
+```
+
